@@ -1,0 +1,36 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "aifraud-dashboard",
+    "title": "AI Fraud Metrics",
+    "schemaVersion": 30,
+    "version": 1,
+    "panels": [
+      {
+        "type": "graph",
+        "title": "Transactions Ingested",
+        "datasource": "Prometheus",
+        "targets": [{
+          "expr": "transaction_api_ingested_total",
+          "legendFormat": "Ingested",
+          "refId": "A"
+        }],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "type": "graph",
+        "title": "Ingestion Failures",
+        "datasource": "Prometheus",
+        "targets": [{
+          "expr": "transaction_api_failed_total",
+          "legendFormat": "Failed",
+          "refId": "A"
+        }],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      }
+    ]
+  },
+  "templating": {"list": []},
+  "annotations": {"list": []},
+  "refresh": "5s"
+}

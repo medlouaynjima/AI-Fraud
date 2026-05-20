@@ -34,6 +34,7 @@ KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "transactions")
 
 producer = None
+producer_ready = False
 
 class Transaction(BaseModel):
     transaction_id: str = Field(..., description="Unique identifier for the transaction")
@@ -55,7 +56,7 @@ class Transaction(BaseModel):
     }
 
 async def initialize_producer():
-    global producer
+    global producer, producer_ready
     retry_count = 0
     max_retries = 10
     delay = 3
@@ -68,6 +69,7 @@ async def initialize_producer():
                 value_serializer=lambda v: json.dumps(v).encode("utf-8")
             )
             await producer.start()
+            producer_ready = True
             print("Kafka Producer successfully started and connected.")
             return
         except KafkaConnectionError as e:
@@ -84,15 +86,16 @@ async def startup_event():
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    global producer
+    global producer, producer_ready
     if producer:
+        producer_ready = False
         print("Stopping Kafka Producer...")
         await producer.stop()
         print("Kafka Producer stopped.")
 
 @app.get("/health")
 async def health_check():
-    kafka_status = "connected" if producer and producer.client.is_ready() else "disconnected"
+    kafka_status = "connected" if producer_ready else "disconnected"
     return {
         "status": "healthy",
         "kafka_status": kafka_status
@@ -100,9 +103,9 @@ async def health_check():
 
 @app.post("/transactions", status_code=status.HTTP_202_ACCEPTED)
 async def ingest_transaction(transaction: Transaction):
-    global producer
+    global producer, producer_ready
     
-    if not producer or not producer.client.is_ready():
+    if not producer_ready:
         FAILED_COUNTER.inc()
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -110,16 +113,16 @@ async def ingest_transaction(transaction: Transaction):
         )
 
     start_time = time.time()
+    # Validate timestamp format
     try:
-        # Validate timestamp format
-        try:
-            datetime.fromisoformat(transaction.timestamp.replace("Z", "+00:00"))
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid timestamp format. Must be ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)"
-            )
+        datetime.fromisoformat(transaction.timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid timestamp format. Must be ISO 8601 (YYYY-MM-DDTHH:MM:SSZ)"
+        )
 
+    try:
         payload = transaction.model_dump()
         
         # Send asynchronously to Kafka topic

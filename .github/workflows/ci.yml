@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      kafka:
+        image: bitnami/kafka:latest
+        env:
+          KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          ALLOW_PLAINTEXT_LISTENER: "yes"
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "nc -z localhost 9092" --health-interval 10s --health-timeout 5s --health-retries 5
+      zookeeper:
+        image: bitnami/zookeeper:latest
+        ports:
+          - 2181:2181
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r transaction_api/requirements.txt
+          pip install -r ml_service/requirements.txt
+          pip install -r fraud_consumer/requirements.txt
+          pip install pytest pytest-asyncio httpx
+
+      - name: Run Linters (ruff)
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Run Tests (Docker)
+        run: |
+          docker compose build
+          docker compose up -d
+          sleep 10
+          docker compose run --rm transaction-api python -m pytest transaction_api/test_main.py
+          docker compose run --rm ml-service python -m pytest ml_service/test_main.py
+          docker compose run --rm fraud-consumer python -m pytest fraud_consumer/test_main.py
+
+      - name: Build Docker Images
+        run: |
+          docker compose build
+
+      - name: Push Docker images (placeholder)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "Docker image push steps would go here"
